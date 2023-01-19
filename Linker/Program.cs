@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Linker
@@ -17,11 +18,33 @@ namespace Linker
             lnk.FirstPass();
             lnk.SecondPass();
             lnk.WriteInfo();
+            ReadBack();
+        }
+        static void ReadBack()
+        {
+            string s = Path.GetFullPath("output");
+            Console.WriteLine("Linking process log can be found at: ");
+            Console.WriteLine(s);
+            Console.WriteLine();
+            Console.WriteLine("Reading the from log file:");
+            Console.WriteLine();
+            using (StreamReader sr = new StreamReader("output"))
+            {
+                while (!sr.EndOfStream)
+                {
+                    Console.WriteLine(sr.ReadLine());
+                    Thread.Sleep(50);
+                }
+            }
+            Console.WriteLine();
+            Console.WriteLine("Process finished...");
+            Console.ReadKey();
         }
     }
     class Linker
     {
-        readonly string path = "input-1";
+        readonly string path = "input";
+        readonly string opath = "output";
         StreamReader sr { get; set; }
         StreamWriter sw { get; set; }
 
@@ -33,30 +56,52 @@ namespace Linker
 
         readonly static char[] sep = new char[] { ' ' };
 
-        readonly string opath = "output";
-
         public Linker()
         {
+            InitializeOutput();
             modules = new List<Module>();
             MT = new MemoryTable();
             MP = new MemoryMap();
             sr = new StreamReader(path);
-            //sw = new StreamWriter(opath, true);
+            sw = new StreamWriter(opath, true);
+        }
+        void InitializeOutput()
+        {
+            if (File.Exists(opath))
+            {
+                File.Delete(opath);
+            }
+            File.Create(opath).Close();
         }
         public void WriteInfo()
         {
-            Console.WriteLine();
-            Console.WriteLine("Memory Table:");
-            foreach(DefinedMemory dm in MT.Table)
+            //Console.WriteLine();
+            //Console.WriteLine("Memory Table:");
+            //foreach(DefinedMemory dm in MT.Table)
+            //{
+            //    Console.WriteLine(dm.ToString());
+            //}
+            //Console.WriteLine();
+            //Console.WriteLine("Memory map:");
+            //for(int i = 0; i < MP.Map.Count; i++)
+            //{
+            //    Console.WriteLine($"{i}: {MP.Map[i]}");
+            //}
+
+            sw.WriteLine();
+            sw.WriteLine("Memory Table:");
+            foreach (DefinedMemory dm in MT.Table)
             {
-                Console.WriteLine(dm.ToString());
+                sw.WriteLine(dm.ToString());
             }
-            Console.WriteLine();
-            Console.WriteLine("Memory map:");
-            for(int i = 0; i < MP.Map.Count; i++)
+            sw.WriteLine();
+            sw.WriteLine("Memory map:");
+            for (int i = 0; i < MP.Map.Count; i++)
             {
-                Console.WriteLine($"{i}: {MP.Map[i]}");
+                sw.WriteLine($"{i}: {MP.Map[i]}");
             }
+
+            sw.Close();
         }
         public void SecondPass()
         {
@@ -95,7 +140,8 @@ namespace Linker
         {
             if (op.IsUsedBy != null)
             {
-                Console.WriteLine($"Error: Operation {op} is already used by {op.IsUsedBy.ID}.");
+                //Console.WriteLine($"Error: Operation {op} is already used by {op.IsUsedBy.ID}.");
+                sw.WriteLine($"Error: Operation {op} is already used by {op.IsUsedBy.ID}.");
                 return true;
             }
             else return false;
@@ -104,7 +150,8 @@ namespace Linker
         {
             if (op.Type == 1)
             {
-                Console.WriteLine($"Error: Operation {op} is of type immediate and is used by a variable, it will be treated as an external");
+                //Console.WriteLine($"Error: Operation {op} is of type immediate and is used by a variable, it will be treated as an external");
+                sw.WriteLine($"Error: Operation {op} is of type immediate and is used by a variable, it will be treated as an external");
                 op.Type = 4;
             }
         }
@@ -139,16 +186,22 @@ namespace Linker
         }
         void Absolute(OP op)
         {
-            if(op.Field > 199)   // if absolute is bigger than machine size ( 200 words ) 
-            {
-                op.Field = 199;
-                op.Value = 1000 * op.OpCode + op.Field;
-                return;
-            }
+            //if(op.Field > 199)   // if absolute is bigger than machine size ( 200 words ) // yeah idk how this works
+            //{
+            //    op.Field = 199;
+            //    op.Value = 1000 * op.OpCode + op.Field;
+            //    return;
+            //}
             op.Value = op.Value / 10;
         }
         void Relative(OP op, Module M)
         {
+            if(op.IsUsedBy != null)
+            {
+                External(op);
+                op.Value += M.Offset;
+                return;
+            }
             op.Value = (op.Value / 10) + M.Offset;
         }
         void External(OP op)
@@ -165,7 +218,8 @@ namespace Linker
                 }
                 catch (NullReferenceException) // this means the op itself is marked as external but was never assigned a variable but uses it, so isUsedBy will be null
                 {
-                    Console.WriteLine($"Error: Operation {op} is not used by any variable, will be treated as immediate address.");
+                    //Console.WriteLine($"Error: Operation {op} is not used by any variable, will be treated as immediate address.");
+                    sw.WriteLine($"Error: Operation {op} is not used by any variable, will be treated as immediate address.");
                     op.Type = 1;
                     Immediate(op); // if its not used by any of the declared outside variables it will be treated as an immediate address
                     return;
@@ -184,7 +238,7 @@ namespace Linker
         // FIRSTPASS FROM HERE
         public void FirstPass()
         {
-            string s = sr.ReadLine();
+            string s = sr.ReadLine().Trim();
             int n = int.Parse(s);
             sr.ReadLine(); // clears line after module count           
             for(int i = 1; i <= n; i++)
@@ -200,13 +254,13 @@ namespace Linker
                 sr.ReadLine(); // clears empty line after a module
             }
 
-            OffsetCalc();
+            OffsetCalc(); // calculates the module offsets
 
-            MemTableCalc();
+            MemTableCalc(); // calculates all the variables declared and their declaration address
 
-            InitialMemMap();
+            InitialMemMap(); // maps the operations to the mem map without solving anything yet
 
-            sr.Close();
+            sr.Close(); // doesn't need to read from file anymore so streamreader can be closed, everything is stored in this object
         }
         
 
@@ -227,10 +281,11 @@ namespace Linker
             {
                 foreach(Memory mem in M.DefList)
                 {
-                    if(mem.Pos > M.OpList.Count)
+                    if(mem.Pos >= M.OpList.Count)
                     {
-                        Console.WriteLine($"Error: {mem} definition is out of module bounds, it's address has been set to zero.");
-                        MT.Table.Add(new DefinedMemory(0, mem.ID));
+                        //Console.WriteLine($"Error: {mem} definition is out of module bounds, it's address has been set to zero.");
+                        sw.WriteLine($"Error: {mem} definition is out of module bounds, it's address has been set to zero (relative).");
+                        MT.Table.Add(new DefinedMemory(0 + M.Offset, mem.ID));
                         continue;
                     }
                     MT.Table.Add(new DefinedMemory(mem.Pos + M.Offset, mem.ID));
@@ -243,7 +298,8 @@ namespace Linker
                 {
                     if (MT.Table[i].ID == MT.Table[j].ID)
                     {
-                        Console.WriteLine($"Error: {MT.Table[i]} defined in multiple cases, will only use first instance");
+                        //Console.WriteLine($"Error: {MT.Table[i]} defined in multiple cases, will only use first instance");
+                        sw.WriteLine($"Error: {MT.Table[i]} defined in multiple cases, will only use first instance");
                         MT.Table.Remove(MT.Table[j]);
                     }
                 }
@@ -264,7 +320,8 @@ namespace Linker
                 }
                 if (!ok)
                 {
-                    Console.WriteLine($"Warning: {dm.ID} was declared but never used!");
+                    //Console.WriteLine($"Warning: {dm.ID} was declared but never used!");
+                    sw.WriteLine($"Warning: {dm.ID} was declared but never used!");
                 }
             }
 
@@ -283,7 +340,8 @@ namespace Linker
                     }
                     if (!ok)
                     {
-                        Console.WriteLine($"Warning {m.ID} was never declared, will have it's default value at 0!");
+                        //Console.WriteLine($"Warning {m.ID} was never declared, will have it's default value at 0!");
+                        sw.WriteLine($"Error: {m.ID} was never declared, will be declared with its address at 0!");
                         bool isDupe = false;                                  // could have multiple undeclared variables of same name, only adds one.
                         foreach(DefinedMemory checkifdupe in MT.Table)
                         {
@@ -314,7 +372,7 @@ namespace Linker
         }
         void ReadDefList(StreamReader s, Module m)
         {
-            string line = s.ReadLine();
+            string line = s.ReadLine().Trim();
             int nr = 0;
             if (line[0] == '0')
             {
@@ -324,14 +382,14 @@ namespace Linker
 
             string[] tokens = line.Split(sep, StringSplitOptions.RemoveEmptyEntries);
 
-            for(int i = 1; i + 1 < tokens.Length; i++)
+            for(int i = 1; i + 1 < tokens.Length; i+= 2)
             {
                 m.DefList.Add(new Memory(tokens[i], int.Parse(tokens[i + 1])));
             }
         }
         void ReadUseList(StreamReader s, Module m)
         {
-            string line = s.ReadLine();
+            string line = s.ReadLine().Trim();
             int nr = 0;
             if (line[0] == '0')
             {
@@ -341,14 +399,14 @@ namespace Linker
 
             string[] tokens = line.Split(sep, StringSplitOptions.RemoveEmptyEntries);
 
-            for (int i = 1; i + 1 < tokens.Length; i++)
+            for (int i = 1; i + 1 < tokens.Length; i+= 2)
             {
                 m.UseList.Add(new Memory(tokens[i], int.Parse(tokens[i + 1])));
             }
         }
         void ReadOpList(StreamReader s, Module m)
         {
-            string line = s.ReadLine();
+            string line = s.ReadLine().Trim();
             int nr = 0;
             if (line[0] == '0')
             {
