@@ -1,7 +1,9 @@
-﻿using System;
+﻿using Microsoft.SqlServer.Server;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -13,7 +15,8 @@ namespace Linker
         {
             Linker lnk = new Linker();
             lnk.FirstPass();
-
+            lnk.SecondPass();
+            lnk.WriteInfo();
         }
     }
     class Linker
@@ -40,12 +43,100 @@ namespace Linker
             sr = new StreamReader(path);
             //sw = new StreamWriter(opath, true);
         }
-
+        public void WriteInfo()
+        {
+            Console.WriteLine("Memory Table:");
+            foreach(DefinedMemory dm in MT.Table)
+            {
+                Console.WriteLine(dm.ToString());
+            }
+            Console.WriteLine();
+            Console.WriteLine("Memory map:");
+            for(int i = 0; i < MP.Map.Count; i++)
+            {
+                Console.WriteLine($"{i}: {MP.Map[i]}");
+            }
+        }
         public void SecondPass()
         {
+            UseCheck();
 
+            Solve();
         }
-
+        public void UseCheck() // checks usage of each memory fragment in operations and assigns their use
+        {
+            foreach (Module M in modules)
+            {
+                foreach (Memory m in M.UseList)
+                {
+                    int use = M.OpList[m.Pos].Field;
+                    M.OpList[m.Pos].IsUsedBy = m;
+                    while (use != 777)
+                    {
+                        M.OpList[use].IsUsedBy = m;
+                        use = M.OpList[use].Field;
+                    }
+                }
+            }
+        }
+        public void Solve()
+        {
+            foreach(Module M in modules)          // modules are in order so it's ok to go through them, espeically when i have to check for relative address
+            {
+                foreach (OP op in M.OpList)
+                {
+                    ResolveOp(op,M);
+                }
+            }          
+        }
+        void ResolveOp(OP op, Module M)
+        {
+            switch (op.Type)
+            {
+                case 1:
+                    Immediate(op); break;
+                case 2:
+                    Absolute(op); break;
+                case 3:
+                    Relative(op, M); break;
+                case 4:
+                    External(op); break;
+                default: break;
+            }
+        }
+        void Immediate(OP op)   // i don't know what the difference between immediate and absolute is
+        {
+            op.Value = op.Value / 10;
+        }
+        void Absolute(OP op)
+        {
+            op.Value = op.Value / 10;
+        }
+        void Relative(OP op, Module M)
+        {
+            op.Value = (op.Value / 10) + M.Offset;
+        }
+        void External(OP op)
+        {
+            int used = 0;
+            foreach(DefinedMemory dm in MT.Table)
+            {
+                if(dm.ID == op.IsUsedBy.ID)
+                {
+                    used = dm.Address;
+                }
+            }
+            StringBuilder str = new StringBuilder();
+            str.Append(op.OpCode);
+            string toadd = used.ToString();
+            for(int i = toadd.Length; i < 3; i++)
+            {
+                str.Append('0');
+            }
+            str.Append(toadd);
+            op.Value = int.Parse(str.ToString());
+        }
+        // FIRSTPASS FROM HERE
         public void FirstPass()
         {
             string s = sr.ReadLine();
