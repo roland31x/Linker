@@ -51,6 +51,7 @@
     <None Include="input">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="IO.ZIP" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
