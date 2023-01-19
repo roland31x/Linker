@@ -15,9 +15,7 @@ namespace Linker
         static void Main(string[] args)
         {
             Linker lnk = new Linker();
-            lnk.FirstPass();
-            lnk.SecondPass();
-            lnk.WriteInfo();
+            lnk.Operate();
             ReadBack();
         }
         static void ReadBack()

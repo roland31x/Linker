@@ -11,6 +11,7 @@ namespace Linker
     {
         readonly string path = "input";
         readonly string opath = "output";
+        bool Done { get; set; }
         StreamReader sr { get; set; }
         StreamWriter sw { get; set; }
 
@@ -30,6 +31,21 @@ namespace Linker
             MP = new MemoryMap();
             sr = new StreamReader(path);
             sw = new StreamWriter(opath, true);
+            Done = false;
+        }
+        public void Operate()
+        {
+            if (!Done)
+            {
+                FirstPass();
+                SecondPass();
+                WriteInfo();
+                Done = true;
+            }
+            else
+            {
+                Console.WriteLine("Linker already computed the input file.");
+            }
         }
         void InitializeOutput()
         {
@@ -39,7 +55,7 @@ namespace Linker
             }
             File.Create(opath).Close();
         }
-        public void WriteInfo()
+        void WriteInfo()
         {
             //Console.WriteLine();
             //Console.WriteLine("Memory Table:");
@@ -69,12 +85,12 @@ namespace Linker
 
             sw.Close();
         }
-        public void SecondPass()
+        void SecondPass()
         {
             UseCheck(); // sets the useage of operations for each variable
             Solve();
         }
-        public void UseCheck() // checks usage of each memory fragment in operations and assigns their use
+        void UseCheck() // checks usage of each memory fragment in operations and assigns their use
         {
             foreach (Module M in modules)
             {
@@ -202,7 +218,7 @@ namespace Linker
             op.Value = int.Parse(str.ToString());
         }
         // FIRSTPASS FROM HERE
-        public void FirstPass()
+        void FirstPass()
         {
             string s = sr.ReadLine().Trim();
             int n = int.Parse(s);
