@@ -55,7 +55,7 @@ namespace Linker
             //}
 
             sw.WriteLine();
-            sw.WriteLine("Memory Table:");
+            sw.WriteLine("Symbol Table:");
             foreach (DefinedMemory dm in MT.Table)
             {
                 sw.WriteLine(dm.ToString());
