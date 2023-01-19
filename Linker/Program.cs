@@ -45,6 +45,7 @@ namespace Linker
         }
         public void WriteInfo()
         {
+            Console.WriteLine();
             Console.WriteLine("Memory Table:");
             foreach(DefinedMemory dm in MT.Table)
             {
@@ -59,8 +60,7 @@ namespace Linker
         }
         public void SecondPass()
         {
-            UseCheck();
-
+            UseCheck(); // sets the useage of operations for each variable
             Solve();
         }
         public void UseCheck() // checks usage of each memory fragment in operations and assigns their use
@@ -70,16 +70,45 @@ namespace Linker
                 foreach (Memory m in M.UseList)
                 {
                     int use = M.OpList[m.Pos].Field;
+                    if (CheckUse(M.OpList[m.Pos]))
+                    {
+                        continue;
+                    }
+                    CheckImm(M.OpList[m.Pos]);
                     M.OpList[m.Pos].IsUsedBy = m;
                     while (use != 777)
                     {
+                        if (CheckUse(M.OpList[use]))
+                        {
+                            // now here idk if the chain of uses for that memory fragment should continue or not, i assume it does 
+                            use = M.OpList[use].Field;
+                            continue;
+                        }
+                        CheckImm(M.OpList[use]);
                         M.OpList[use].IsUsedBy = m;
                         use = M.OpList[use].Field;
                     }
                 }
             }
         }
-        public void Solve()
+        bool CheckUse(OP op)
+        {
+            if (op.IsUsedBy != null)
+            {
+                Console.WriteLine($"Error: Operation {op} is already used by {op.IsUsedBy.ID}.");
+                return true;
+            }
+            else return false;
+        }
+        void CheckImm(OP op)
+        {
+            if (op.Type == 1)
+            {
+                Console.WriteLine($"Error: Operation {op} is of type immediate and is used by a variable, it will be treated as an external");
+                op.Type = 4;
+            }
+        }
+        void Solve()
         {
             foreach(Module M in modules)          // modules are in order so it's ok to go through them, espeically when i have to check for relative address
             {
@@ -110,6 +139,12 @@ namespace Linker
         }
         void Absolute(OP op)
         {
+            if(op.Field > 199)   // if absolute is bigger than machine size ( 200 words ) 
+            {
+                op.Field = 199;
+                op.Value = 1000 * op.OpCode + op.Field;
+                return;
+            }
             op.Value = op.Value / 10;
         }
         void Relative(OP op, Module M)
@@ -118,12 +153,22 @@ namespace Linker
         }
         void External(OP op)
         {
-            int used = 0;
+            int used = -1;
             foreach(DefinedMemory dm in MT.Table)
             {
-                if(dm.ID == op.IsUsedBy.ID)
+                try
                 {
-                    used = dm.Address;
+                    if (dm.ID == op.IsUsedBy.ID)
+                    {
+                        used = dm.Address;
+                    }
+                }
+                catch (NullReferenceException) // this means the op itself is marked as external but was never assigned a variable but uses it, so isUsedBy will be null
+                {
+                    Console.WriteLine($"Error: Operation {op} is not used by any variable, will be treated as immediate address.");
+                    op.Type = 1;
+                    Immediate(op); // if its not used by any of the declared outside variables it will be treated as an immediate address
+                    return;
                 }
             }
             StringBuilder str = new StringBuilder();
@@ -182,6 +227,12 @@ namespace Linker
             {
                 foreach(Memory mem in M.DefList)
                 {
+                    if(mem.Pos > M.OpList.Count)
+                    {
+                        Console.WriteLine($"Error: {mem} definition is out of module bounds, it's address has been set to zero.");
+                        MT.Table.Add(new DefinedMemory(0, mem.ID));
+                        continue;
+                    }
                     MT.Table.Add(new DefinedMemory(mem.Pos + M.Offset, mem.ID));
                 }
             }
